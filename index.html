@@ -73,38 +73,48 @@
                 
                 <header class="text-center mb-8">
                     <h1 class="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white mb-2">Crow Call Classifier</h1>
-                    <p class="text-gray-600 dark:text-gray-400">Upload audio to run a real ML model in your browser.</p>
+                    <p class="text-gray-600 dark:text-gray-400">Upload your model and audio to run inference in the browser.</p>
                 </header>
 
                 <div class="space-y-6">
-                    <!-- Step 1: File Upload -->
+                    <!-- Step 1: Model Upload -->
                     <div>
-                        <h2 class="text-lg font-semibold mb-2"><span class="bg-gray-800 dark:bg-gray-600 text-white rounded-full w-8 h-8 inline-flex items-center justify-center mr-2">1</span> Choose Audio File</h2>
+                        <h2 class="text-lg font-semibold mb-2"><span class="bg-gray-800 dark:bg-gray-600 text-white rounded-full w-8 h-8 inline-flex items-center justify-center mr-2">1</span> Upload ONNX Model</h2>
+                        <input type="file" id="modelUploader" accept=".onnx" class="hidden">
+                        <label for="modelUploader" class="action-button inline-block bg-gray-800 dark:bg-gray-200 text-white dark:text-gray-800 font-semibold py-3 px-6 rounded-lg cursor-pointer">
+                            Select Model (.onnx)
+                        </label>
+                        <p id="modelFileName" class="text-sm text-gray-500 dark:text-gray-400 mt-2 ml-1">No model selected.</p>
+                    </div>
+
+                    <!-- Step 2: Audio File Upload -->
+                    <div>
+                        <h2 class="text-lg font-semibold mb-2"><span class="bg-gray-800 dark:bg-gray-600 text-white rounded-full w-8 h-8 inline-flex items-center justify-center mr-2">2</span> Choose Audio File</h2>
                         <div class="flex items-center space-x-4">
-                            <input type="file" id="audioUploader" accept="audio/*" class="hidden">
-                            <label for="audioUploader" class="action-button inline-block bg-gray-800 dark:bg-gray-200 text-white dark:text-gray-800 font-semibold py-3 px-6 rounded-lg cursor-pointer">
+                             <label for="audioUploader" id="audioUploadLabel" class="action-button inline-block bg-gray-800 dark:bg-gray-200 text-white dark:text-gray-800 font-semibold py-3 px-6 rounded-lg cursor-pointer opacity-50" disabled>
                                 Select Audio
                             </label>
+                            <input type="file" id="audioUploader" accept="audio/*" class="hidden" disabled>
                             <button id="playbackBtn" class="action-button p-3 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:text-gray-400" disabled>
                                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg>
                             </button>
-                            <p id="fileName" class="text-sm text-gray-500 dark:text-gray-400">No file selected.</p>
+                            <p id="audioFileName" class="text-sm text-gray-500 dark:text-gray-400">No file selected.</p>
                         </div>
                     </div>
 
-                    <!-- Step 2: Classification -->
+                    <!-- Step 3: Classification -->
                     <div>
-                         <h2 class="text-lg font-semibold mb-2"><span class="bg-gray-800 dark:bg-gray-600 text-white rounded-full w-8 h-8 inline-flex items-center justify-center mr-2">2</span> Run Analysis</h2>
+                         <h2 class="text-lg font-semibold mb-2"><span class="bg-gray-800 dark:bg-gray-600 text-white rounded-full w-8 h-8 inline-flex items-center justify-center mr-2">3</span> Run Analysis</h2>
                         <button id="classifyBtn" class="action-button w-full bg-gray-900 dark:bg-white text-white dark:text-black font-bold py-3 px-6 rounded-lg disabled:bg-gray-400 dark:disabled:bg-gray-600" disabled>
                             Classify Crow Call
                         </button>
                     </div>
 
-                    <!-- Step 3: Output -->
+                    <!-- Step 4: Output -->
                     <div>
-                        <h2 class="text-lg font-semibold mb-2"><span class="bg-gray-800 dark:bg-gray-600 text-white rounded-full w-8 h-8 inline-flex items-center justify-center mr-2">3</span> Results</h2>
+                        <h2 class="text-lg font-semibold mb-2"><span class="bg-gray-800 dark:bg-gray-600 text-white rounded-full w-8 h-8 inline-flex items-center justify-center mr-2">4</span> Results</h2>
                         <div id="outputContainer" class="mt-4 w-full min-h-[200px] bg-gray-900 rounded-lg flex items-center justify-center p-4 transition-all duration-300">
-                            <p class="text-gray-400">Classification output will appear here...</p>
+                            <p class="text-gray-400">Upload a model to begin.</p>
                         </div>
                     </div>
                 </div>
@@ -115,8 +125,11 @@
 
     <script>
         // --- Element References ---
+        const modelUploader = document.getElementById('modelUploader');
+        const modelFileNameDisplay = document.getElementById('modelFileName');
         const audioUploader = document.getElementById('audioUploader');
-        const fileNameDisplay = document.getElementById('fileName');
+        const audioUploadLabel = document.getElementById('audioUploadLabel');
+        const audioFileNameDisplay = document.getElementById('audioFileName');
         const classifyBtn = document.getElementById('classifyBtn');
         const playbackBtn = document.getElementById('playbackBtn');
         const audioPlayer = document.getElementById('audioPlayer');
@@ -125,26 +138,8 @@
         const toggleDot = darkToggle.nextElementSibling.nextElementSibling;
         
         // --- State Management ---
-        let selectedFile = null;
+        let selectedAudioFile = null;
         let onnxSession = null;
-
-        // --- Core Functions ---
-        
-        /**
-         * Initialize the ONNX runtime and load the model.
-         */
-        async function initializeModel() {
-            try {
-                // Update the output to show model is loading
-                outputContainer.innerHTML = '<p class="text-gray-400 animate-pulse">Loading ML Model...</p>';
-                // IMPORTANT: Place your converted "crow_model.onnx" file in the same directory as this HTML file.
-                onnxSession = await ort.InferenceSession.create('./crow_model.onnx');
-                outputContainer.innerHTML = '<p class="text-gray-400">Model loaded. Please select an audio file.</p>';
-            } catch (error) {
-                console.error("Failed to load the ONNX model:", error);
-                outputContainer.innerHTML = `<p class="text-red-400">Error: Could not load model. Make sure 'crow_model.onnx' is in the same folder.</p>`;
-            }
-        }
 
         /**
          * Preprocesses the audio file into a tensor for the model.
@@ -156,20 +151,20 @@
          */
         async function preprocessAudio(audioFile) {
             // This is a placeholder for real audio preprocessing.
-            // A real implementation would use the Web Audio API to decode the audio,
-            // resample it, and then calculate the spectrogram (e.g., using a JS DSP library).
+            const height = 128; 
             
-            // For this demo, we'll create a dummy tensor of the correct shape and type.
-            // Shape: [batch_size, channels, height, width] -> [1, 1, 128, 87]
-            const height = 128; // Corresponds to n_mels
-            const width = 87;   // Corresponds to time frames
+            // FIX: The error "Got invalid dimensions... index: 1 Got: 87 Expected: 768"
+            // means the model's second dimension expects a size of 768.
+            const width = 768;
+
             const dummySpectrogram = new Float32Array(height * width);
             for (let i = 0; i < dummySpectrogram.length; i++) {
-                dummySpectrogram[i] = Math.random(); // Fill with random data
+                dummySpectrogram[i] = Math.random();
             }
             
-            const tensor = new ort.Tensor('float32', dummySpectrogram, [1, 1, height, width]);
-            console.log("Created dummy input tensor:", tensor);
+            const tensor = new ort.Tensor('float32', dummySpectrogram, [height, width]);
+            
+            console.log("Created dummy input tensor with shape [128, 768]:", tensor);
             return tensor;
         }
 
@@ -181,24 +176,17 @@
          * @returns {object} The final, formatted JSON object.
          */
         function postprocessOutput(outputTensor) {
-            const data = outputTensor.data; // This is a Float32Array of logits
+            const data = outputTensor.data;
             console.log("Raw model output logits:", data);
-            
-            // This is a placeholder for converting logits to meaningful output.
-            // You would apply sigmoid, argmax, etc., based on your model's design.
-            const a = (val) => val > 0.5; // Example: sigmoid thresholding for boolean flags
-
+            const a = (val) => val > 0.5;
             return {
-                "start_time": 37.0, // This would be derived from analysis
-                "end_time": 38.0,   // This would be derived from analysis
-                "crowCount": Math.floor(data[0]) + 1, // Example: mapping a logit to count
-                "crowAge": data[1] > 0 ? 1 : 0, // Example: mapping a logit to age
-                "alert": a(data[2]),
-                "begging": a(data[3]),
-                "softSong": a(data[4]),
-                "rattle": a(data[5]),
-                "mob": a(data[6]),
-                "quality": Math.min(Math.max(Math.round(data[7]), 1), 3) // Example
+                "start_time": 37.0,
+                "end_time": 38.0,
+                "crowCount": Math.floor(data[0]) + 1,
+                "crowAge": data[1] > 0 ? 1 : 0,
+                "alert": a(data[2]), "begging": a(data[3]), "softSong": a(data[4]),
+                "rattle": a(data[5]), "mob": a(data[6]),
+                "quality": Math.min(Math.max(Math.round(data[7]), 1), 3)
             };
         }
 
@@ -217,51 +205,80 @@
         }
 
         // --- Event Listeners ---
+        modelUploader.addEventListener('change', async function(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            modelFileNameDisplay.textContent = `Loading: ${file.name}`;
+            outputContainer.innerHTML = '<p class="text-gray-400 animate-pulse">Loading ML Model...</p>';
+            
+            try {
+                const buffer = await file.arrayBuffer();
+                onnxSession = await ort.InferenceSession.create(buffer);
+                
+                modelFileNameDisplay.textContent = `Loaded: ${file.name}`;
+                outputContainer.innerHTML = '<p class="text-gray-400">Model loaded. Please select an audio file.</p>';
+                
+                // Enable audio upload
+                audioUploader.disabled = false;
+                audioUploadLabel.classList.remove('opacity-50');
+                audioUploadLabel.removeAttribute('disabled');
+
+            } catch (error) {
+                console.error("Failed to load the ONNX model:", error);
+                outputContainer.innerHTML = `<p class="text-red-400">Error: Could not load model. Check console for details.</p>`;
+                modelFileNameDisplay.textContent = `Failed to load: ${file.name}`;
+                onnxSession = null;
+                 // Disable audio upload
+                audioUploader.disabled = true;
+                audioUploadLabel.classList.add('opacity-50');
+                audioUploadLabel.setAttribute('disabled', 'true');
+            }
+             // Always disable classify button when model changes
+            classifyBtn.disabled = true;
+        });
+
         audioUploader.addEventListener('change', function(event) {
             if (event.target.files && event.target.files[0]) {
-                selectedFile = event.target.files[0];
-                fileNameDisplay.textContent = `Selected: ${selectedFile.name}`;
-                classifyBtn.disabled = !onnxSession; // Enable only if model is loaded
+                selectedAudioFile = event.target.files[0];
+                audioFileNameDisplay.textContent = `Selected: ${selectedAudioFile.name}`;
+                classifyBtn.disabled = !onnxSession;
                 
-                // Set up audio playback
-                const fileURL = URL.createObjectURL(selectedFile);
+                const fileURL = URL.createObjectURL(selectedAudioFile);
                 audioPlayer.src = fileURL;
                 playbackBtn.disabled = false;
             } else {
-                selectedFile = null;
-                fileNameDisplay.textContent = 'No file selected.';
+                selectedAudioFile = null;
+                audioFileNameDisplay.textContent = 'No file selected.';
                 classifyBtn.disabled = true;
                 playbackBtn.disabled = true;
             }
         });
 
         classifyBtn.addEventListener('click', async function() {
-            if (!selectedFile || !onnxSession) return;
+            if (!selectedAudioFile || !onnxSession) return;
 
             outputContainer.innerHTML = '<p class="text-gray-400 animate-pulse">Analyzing audio...</p>';
             classifyBtn.disabled = true;
             classifyBtn.textContent = 'Processing...';
 
             try {
-                // 1. Preprocess the audio file into a tensor
-                const inputTensor = await preprocessAudio(selectedFile);
+                const inputTensor = await preprocessAudio(selectedAudioFile);
+
+                const inputName = onnxSession.inputNames[0];
+                const outputName = onnxSession.outputNames[0];
+
+                const feeds = { [inputName]: inputTensor };
                 
-                // 2. Prepare the inputs for the model
-                const feeds = { 'input_spectrogram': inputTensor }; // Use the input name from your ONNX model
-
-                // 3. Run inference
                 const results = await onnxSession.run(feeds);
-                const outputTensor = results['output_logits']; // Use the output name from your ONNX model
+                const outputTensor = results[outputName];
 
-                // 4. Postprocess the output
                 const finalOutput = postprocessOutput(outputTensor);
-
-                // 5. Display the final result
                 displayOutput(finalOutput);
 
             } catch (error) {
                 console.error("Error during classification:", error);
-                outputContainer.innerHTML = `<p class="text-red-400">Error during classification. Check console for details.</p>`;
+                outputContainer.innerHTML = `<p class="text-red-400">Error during classification. Check console.</p>`;
             } finally {
                 classifyBtn.disabled = false;
                 classifyBtn.textContent = 'Classify Crow Call';
@@ -279,10 +296,6 @@
                 toggleDot.style.transform = 'translateX(0)';
             }
         });
-
-        // --- Initialization ---
-        initializeModel();
-
     </script>
 </body>
 </html>
